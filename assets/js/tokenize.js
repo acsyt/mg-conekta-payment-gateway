@@ -1,5 +1,7 @@
 jQuery(document).ready(function($) {
-	Conekta.setPublishableKey(wc_conekta_params.public_key);
+	// Conekta.setPublishableKey(wc_conekta_params.public_key);
+	var current_account_token = $("#current_account_token").val()
+	Conekta.setPublishableKey(current_account_token);
 
 	var $form = $('form.checkout,form#order_review');
 
