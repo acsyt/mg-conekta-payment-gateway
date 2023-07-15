@@ -67,21 +67,40 @@ class WC_Conekta_Card_Gateway extends WC_Conekta_Plugin
         $no_accounts = 25;
         $this->account = array();
         $this->accounts = array();
-        for ( $i = 1; $i <= $no_accounts; $i++ ) {
-            $new_accounts = array(
-            'name'                 => $this->get_option( 'account_' . sprintf("%02d", $i) . '_name' ),
-            'catid'                => $this->get_option( 'account_' . sprintf("%02d", $i) . '_catid' ),
-            'track'                => $this->get_option( 'account_' . sprintf("%02d", $i) . '_track' ),
-            'email'                => $this->get_option( 'account_' . sprintf("%02d", $i) . '_email' ),
-            'debug'                => strcmp( $this->get_option( 'account_' . sprintf("%02d", $i) . '_debug' ), 'yes') == 0,
-            'test_api_key'         => $this->get_option( 'account_' . sprintf("%02d", $i) . '_test_api_key' ),
-            'test_publishable_key' => $this->get_option( 'account_' . sprintf("%02d", $i) . '_test_publishable_key' ),
-            'live_api_key'         => $this->get_option( 'account_' . sprintf("%02d", $i) . '_live_api_key' ),
-            'live_publishable_key' => $this->get_option( 'account_' . sprintf("%02d", $i) . '_live_publishable_key' ),
-            );
-            $this->accounts[ $this->get_option( 'account_' . sprintf("%02d", $i) . '_catid' ) ] = $new_accounts;
+        // for ( $i = 1; $i <= $no_accounts; $i++ ) {
+        //     $new_accounts = array(
+        //     'name'                 => $this->get_option( 'account_' . sprintf("%02d", $i) . '_name' ),
+        //     'catid'                => $this->get_option( 'account_' . sprintf("%02d", $i) . '_catid' ),
+        //     'track'                => $this->get_option( 'account_' . sprintf("%02d", $i) . '_track' ),
+        //     'email'                => $this->get_option( 'account_' . sprintf("%02d", $i) . '_email' ),
+        //     'debug'                => strcmp( $this->get_option( 'account_' . sprintf("%02d", $i) . '_debug' ), 'yes') == 0,
+        //     'test_api_key'         => $this->get_option( 'account_' . sprintf("%02d", $i) . '_test_api_key' ),
+        //     'test_publishable_key' => $this->get_option( 'account_' . sprintf("%02d", $i) . '_test_publishable_key' ),
+        //     'live_api_key'         => $this->get_option( 'account_' . sprintf("%02d", $i) . '_live_api_key' ),
+        //     'live_publishable_key' => $this->get_option( 'account_' . sprintf("%02d", $i) . '_live_publishable_key' ),
+        //     );
+        //     $this->accounts[ $this->get_option( 'account_' . sprintf("%02d", $i) . '_catid' ) ] = $new_accounts;
+        // }
+        //
+        $unidades = get_posts( array( 'post_type' => 'unidad', 'posts_per_page' => -1, 'fields' => 'ids' ) );
+        foreach ( $unidades as $unidad_id ) {
+          $catid = get_field( 'ubicacion', $unidad_id );
+          $data = array(
+            // 'name'                 => get_field( '', $unidad_id ),
+            'catid'                => $catid,
+            'track'                => get_field( 'conekta_track', $unidad_id ),
+            'email'                => get_field( 'conekta_email', $unidad_id ),
+            'debug'                => get_field( 'conekta_debug', $unidad_id ),
+            'test_api_key'         => get_field( 'conekta_test_api_key', $unidad_id ),
+            'test_publishable_key' => get_field( 'conekta_test_publishable_key', $unidad_id ),
+            'live_api_key'         => get_field( 'conekta_live_api_key', $unidad_id ),
+            'live_publishable_key' => get_field( 'conekta_live_publishable_key', $unidad_id ),
+          );
+          $this->accounts[ $catid ] = $data;
         }
+        //
 
+        add_action('woocommerce_checkout_init', array( $this, 'checkout_init' ) );
         add_action('wp_enqueue_scripts', array($this, 'ckpg_payment_fields'));
         add_action(
           'woocommerce_update_options_payment_gateways_'.$this->id,
@@ -1514,7 +1533,8 @@ class WC_Conekta_Card_Gateway extends WC_Conekta_Plugin
               $order_id = $this->order->get_id();
               $order_data = $this->order->get_data();
               $user_email = $this->order->get_billing_email();
-              add_filter( 'wp_mail_content_type', create_function( '', 'return "text/html";' ) );
+              // add_filter( 'wp_mail_content_type', create_function( '', 'return "text/html";' ) );
+              add_filter( 'wp_mail_content_type', fn() => 'text/html' );
               $subject = 'Nuevo pedido con Conekta en ' . $this->account['name'] . ' - Estado del pago: Tarjeta aprobada.';
               $message = '
                 <div>Orden: ' . $order_id . '</div>
