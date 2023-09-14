@@ -238,7 +238,7 @@ class WC_Conekta_Cash_Gateway extends WC_Conekta_Plugin
         $customer_info    = ckpg_build_customer_info($data);
         $order_metadata   = ckpg_build_order_metadata($data);
 
-        $this->account = mg_get_bank_account_from_order( $this->order->get_items(), $this->accounts );
+        $this->account = mg_get_bank_account_from_order( $this->order, $this->accounts );
 
         if ( ! $this->account ) {
           wc_add_notice('No se encontraron credenciales para realizar el pago en esta unidad, favor de contactar a un administador.', 'error');

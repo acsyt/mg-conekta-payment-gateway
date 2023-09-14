@@ -239,7 +239,7 @@ class WC_Conekta_Spei_Gateway extends WC_Conekta_Plugin
             'tax_lines'        => $tax_lines
         );
 
-        $this->account = mg_get_bank_account_from_order( $this->order->get_items(), $this->accounts );
+        $this->account = mg_get_bank_account_from_order( $this->order, $this->accounts );
 
         if ( ! $this->account ) {
           wc_add_notice('No se encontraron credenciales para realizar el pago en esta unidad, favor de contactar a un administador.', 'error');
