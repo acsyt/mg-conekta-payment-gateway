@@ -191,25 +191,23 @@ class WC_Conekta_Card_Gateway extends WC_Conekta_Plugin
     }
 
     public function checkout_account_token() {
-      $checkout = WC()->checkout();
-      $categories_ids = array();
-      foreach ( wc()->cart->get_cart() as $cart_item_key => $cart_item ) {
-        $product_id = $cart_item['product_id'];
-        $variation_id = $cart_item['variation_id'];
-        $categories_ids = array_merge( $categories_ids, $cart_item['data']->get_category_ids() );
-        if ($variation_id != 0) {
-          $product = wc_get_product( $product_id );
-          $categories_ids = array_merge( $categories_ids, $product->get_category_ids() );
+        $mg_unidad_id = 0;
+
+        foreach ( WC()->cart->get_cart() as $cart_item_key => $cart_item ) {
+            $product = new MG_Product( $cart_item['product_id'] );
+            $mg_unidad_id = $product->get_mg_unidad_id();
+            break; // Todos los productos están validados de la misma unidad
         }
-      }
-      if (!empty($categories_ids[0])){
-        $current_account = $this->accounts[$categories_ids[0]];
-        woocommerce_form_field('current_account_token', array(
-          'type' => 'hidden',
-          'required' => true,
-          'default' => $current_account['debug'] ? $current_account['test_publishable_key'] : $current_account['live_publishable_key'],
-        ), $checkout->get_value('current_account_token'));
-      }
+
+        if ( $mg_unidad_id ) {
+            $current_account = $this->accounts[ $mg_unidad_id ];
+
+            woocommerce_form_field( 'current_account_token', array(
+                'type' => 'hidden',
+                'required' => true,
+                'default' => $current_account['debug'] ? $current_account['test_publishable_key'] : $current_account['live_publishable_key'],
+            ),  WC()->checkout()->get_value( 'current_account_token' ) );
+        }
     }
 
     protected function ckpg_send_to_conekta()
