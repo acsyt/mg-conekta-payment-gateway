@@ -80,7 +80,7 @@ class WC_Conekta_Plugin extends WC_Payment_Gateway
 		unset($mail_admin);
 
         // Inicio - Correo admins
-		mg_send_mail_wc_payment_notification_to_unidad( $order, $this->accounts );
+		mg_send_mail_wc_payment_notification_to_unidad( $order, $this->accounts, $this->id, false );
         // Fin - Correo admins
 	}
 

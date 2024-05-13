@@ -296,6 +296,11 @@ class WC_Conekta_Spei_Gateway extends WC_Conekta_Plugin
             update_post_meta( $this->order->get_id(), 'conekta-creado', $charge->created_at );
             update_post_meta( $this->order->get_id(), 'conekta-expira', $charge->payment_method->expires_at );
             update_post_meta( $this->order->get_id(), 'conekta-clabe', $charge->payment_method->clabe );
+
+            // Inicio - Correo admins
+            mg_send_mail_wc_payment_notification_to_unidad( $this->order, $this->accounts, $this->id );
+            // Fin - Correo admins
+
             return true;
         } catch(\Conekta\Handler $e) {
             $description = $e->getMessage();

@@ -304,7 +304,7 @@ class WC_Conekta_Card_Gateway extends WC_Conekta_Plugin
             $this->order->add_order_note( 'Realizando pago para: ' . $this->account['name'] );
 
             // Inicio - Correo admins
-		        mg_send_mail_wc_payment_notification_to_unidad( $this->order, $this->accounts );
+            mg_send_mail_wc_payment_notification_to_unidad( $this->order, $this->accounts, $this->id );
             // Fin - Correo admins
 
             return true;
