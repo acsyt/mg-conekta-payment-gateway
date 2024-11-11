@@ -191,16 +191,16 @@ class WC_Conekta_Card_Gateway extends WC_Conekta_Plugin
     }
 
     public function checkout_account_token() {
-        $mg_unidad_id = 0;
+        $unidad_term_id = 0;
 
         foreach ( WC()->cart->get_cart() as $cart_item_key => $cart_item ) {
-            $product = new MG_Product( $cart_item['product_id'] );
-            $mg_unidad_id = $product->get_mg_unidad_id();
+            $product = mg_get_product( $cart_item['product_id'] );
+            $unidad_term_id = $product->get_unidad_term_id();
             break; // Todos los productos están validados de la misma unidad
         }
 
-        if ( $mg_unidad_id ) {
-            $current_account = $this->accounts[ $mg_unidad_id ];
+        if ( $unidad_term_id ) {
+            $current_account = $this->accounts[ $unidad_term_id ];
 
             woocommerce_form_field( 'current_account_token', array(
                 'type' => 'hidden',
