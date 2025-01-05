@@ -30,7 +30,6 @@ class WC_Conekta_Cash_Gateway extends WC_Conekta_Plugin
     public $live_api_key;
     public $secret_key;
     public $lang_options;
-    public $account = false;
 
     public function __construct()
     {
@@ -87,21 +86,35 @@ class WC_Conekta_Cash_Gateway extends WC_Conekta_Plugin
         header('HTTP/1.1 200 OK');
         $body          = @file_get_contents('php://input');
         $event         = json_decode($body, true);
+
+         // Respondiendo a eventos "ping"
+         if (isset($event['type']) && $event['type'] === 'webhook_ping') {
+            header('Content-Type: application/json');
+            echo json_encode(['message' => 'OK']);
+            exit; // Salir de la función después de manejar el evento ping
+        }
+
         $conekta_order = $event['data']['object'];
         $charge        = $conekta_order['charges']['data'][0];
         $order_id      = $conekta_order['metadata']['reference_id'];
-        $paid_at       = date("Y-m-d", $charge['paid_at']);
         $order         = new WC_Order($order_id);
 
-        if (strpos($event['type'], "order.paid") !== false
-            && $charge['payment_method']['type'] === "oxxo")
-            {
+        // paid orders
+        if ($event['type'] === "order.paid"
+            && $charge['payment_method']['type'] === "oxxo") {
+                $paid_at = date("Y-m-d", $charge['paid_at']);
                 update_post_meta($order->get_id(), 'conekta-paid-at', $paid_at);
                 $order->payment_complete();
                 $order->add_order_note(sprintf("Payment completed in Oxxo and notification of payment received"));
 
                 parent::ckpg_offline_payment_notification($order_id, $conekta_order['customer_info']['name']);
-            }
+        }
+
+        // expired orders
+        if ( ($event['type'] === "order.expired"  || $event['type'] ==="order.canceled")
+             && $charge['payment_method']['type'] === "oxxo") {
+            $order->update_status('cancelled', 'Order expired in Conekta.');
+        }
     }
 
     public function ckpg_init_form_fields()
@@ -123,7 +136,7 @@ class WC_Conekta_Cash_Gateway extends WC_Conekta_Plugin
                 'type'        => 'text',
                 'title'       => __('Title', 'woothemes'),
                 'description' => __('This controls the title which the user sees during checkout.', 'woothemes'),
-                'default'     => __('Conekta PAgo en Efectivo en Oxxo Pay', 'woothemes')
+                'default'     => __('Conekta Pago en Efectivo en Oxxo Pay', 'woothemes')
             ),
             'test_api_key' => array(
                 'type'        => 'password',
@@ -185,13 +198,12 @@ class WC_Conekta_Cash_Gateway extends WC_Conekta_Plugin
      */
 
     function ckpg_email_reference($order) {
-        // Comentado por danielgc para ponerlo directamente en el template de Woo
-        // if (get_post_meta( $order->get_id(), 'conekta-referencia', true ) != null)
-        //     {
-        //         echo '<p style="font-size: 30px"><strong>'.__('Referencia').':</strong> ' . esc_html(get_post_meta( $order->get_id(), 'conekta-referencia', true )). '</p>';
-        //         echo '<p>OXXO cobrará una comisión adicional al momento de realizar el pago.</p>';
-        //         echo '<p>INSTRUCCIONES:'. esc_html($this->settings['instructions']) .'</p>';
-        //     }
+        if (get_post_meta( $order->get_id(), 'conekta-referencia', true ) != null)
+            {
+                echo '<p style="font-size: 30px"><strong>'.__('Referencia').':</strong> ' . esc_html(get_post_meta( $order->get_id(), 'conekta-referencia', true )). '</p>';
+                echo '<p>OXXO cobrará una comisión adicional al momento de realizar el pago.</p>';
+                echo '<p>INSTRUCCIONES:'. esc_html($this->settings['instructions']) .'</p>';
+            }
     }
 
     /**
@@ -223,8 +235,6 @@ class WC_Conekta_Cash_Gateway extends WC_Conekta_Plugin
 
     protected function ckpg_send_to_conekta()
     {
-        mg_gateways_set_current_bank_account( $this->order, $this );
-
         global $woocommerce;
         include_once('conekta_gateway_helper.php');
         \Conekta\Conekta::setApiKey($this->secret_key);
@@ -243,7 +253,11 @@ class WC_Conekta_Cash_Gateway extends WC_Conekta_Plugin
         $shipping_contact = ckpg_build_shipping_contact($data);
         $tax_lines        = ckpg_build_tax_lines($taxes);
         $customer_info    = ckpg_build_customer_info($data);
-        $order_metadata   = ckpg_build_order_metadata($data);
+        $order_metadata   = ckpg_build_order_metadata($data + array(
+                                                                    'plugin_conekta_version' => $this->version,
+                                                                    'woocommerce_version'   => $woocommerce->version,
+                                                                )
+                                                    );
         $order_details    = array(
             'currency'         => $data['currency'],
             'line_items'       => $line_items,
@@ -273,9 +287,6 @@ class WC_Conekta_Cash_Gateway extends WC_Conekta_Plugin
             }
 
             update_post_meta($this->order->get_id(), 'conekta-order-id', $order->id);
-            update_post_meta( $this->order->get_id(), 'additional_branch_track', mg_format_additional_branch_track( $this->account, $this->order->get_id(), $order->id ) );
-
-            $this->order->add_order_note( 'Realizando pago para: ' . $this->account['name'] );
 
             $expires_at = time() + ($this->settings['expiration_days'] * 86400);
             $charge_details = array(
@@ -293,8 +304,6 @@ class WC_Conekta_Cash_Gateway extends WC_Conekta_Plugin
             update_post_meta($this->order->get_id(), 'conekta-creado',     $charge->created_at);
             update_post_meta($this->order->get_id(), 'conekta-expira',     $charge->payment_method->expires_at);
             update_post_meta($this->order->get_id(), 'conekta-referencia', $charge->payment_method->reference);
-
-            mg_gateways_send_mail_notification( $this->order, true );
 
             return true;
         } catch(\Conekta\Handler $e) {

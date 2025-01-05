@@ -1,5 +1,9 @@
 <?php
 
+use Conekta\Conekta;
+use Conekta\Handler;
+use Conekta\Order;
+
 if (!class_exists('Conekta')) {
     require_once("lib/conekta-php/lib/Conekta.php");
 }
@@ -33,7 +37,6 @@ class WC_Conekta_Card_Gateway extends WC_Conekta_Plugin
     public $publishable_key;
     public $secret_key;
     public $lang_options;
-    public $account = false;
 
     public function __construct() {
         $this->id = 'conektacard';
@@ -65,7 +68,6 @@ class WC_Conekta_Card_Gateway extends WC_Conekta_Plugin
         $this->lang_options         = parent::ckpg_set_locale_options()->
                                     ckpg_get_lang_options();
 
-        add_action('woocommerce_checkout_init', array( $this, 'checkout_init' ) );
         add_action('wp_enqueue_scripts', array($this, 'ckpg_payment_fields'));
         add_action(
           'woocommerce_update_options_payment_gateways_'.$this->id,
@@ -156,6 +158,8 @@ class WC_Conekta_Card_Gateway extends WC_Conekta_Plugin
            'title'       => __('Alternate Image to display on checkout, use fullly qualified url, served via https', 'woothemes'),
            'default'     => __('', 'woothemes')
            ),
+
+
          );
     }
 
@@ -183,44 +187,19 @@ class WC_Conekta_Card_Gateway extends WC_Conekta_Plugin
         wp_localize_script('tokenize', 'wc_conekta_params', $params);
     }
 
-    public function checkout_init( $checkout ) {
-      add_action( 'woocommerce_before_checkout_form', array( $this, 'checkout_account_token' ) );
-      //add_action( 'woocommerce_after_checkout_form', array( $this, 'checkout_account_token_script' ) );
-    }
-
-    public function checkout_account_token() {
-        $unidad_term_id = 0;
-
-        foreach ( WC()->cart->get_cart() as $cart_item_key => $cart_item ) {
-            $product = mg_get_product( $cart_item['product_id'] );
-            $unidad_term_id = $product->get_unidad_term_id();
-            break; // Todos los productos están validados de la misma unidad
-        }
-
-        if ( $unidad_term_id ) {
-            $this->accounts = mg_get_bank_accounts();
-            $current_account = $this->accounts[ $unidad_term_id ];
-
-            woocommerce_form_field( 'current_account_token', array(
-                'type' => 'hidden',
-                'required' => true,
-                'default' => $current_account['debug'] ? $current_account['test_publishable_key'] : $current_account['live_publishable_key'],
-            ),  WC()->checkout()->get_value( 'current_account_token' ) );
-        }
-    }
-
-    protected function ckpg_send_to_conekta()
+    protected function ckpg_send_to_conekta(): bool
     {
-        mg_gateways_set_current_bank_account( $this->order, $this );
-
         global $woocommerce;
         include_once('conekta_gateway_helper.php');
-        \Conekta\Conekta::setApiKey($this->secret_key);
-        \Conekta\Conekta::setApiVersion('2.0.0');
-        \Conekta\Conekta::setPlugin($this->name);
-        \Conekta\Conekta::setPluginVersion($this->version);
-        \Conekta\Conekta::setLocale('es');
+        Conekta::setApiKey($this->secret_key);
+        Conekta::setApiVersion('2.0.0');
+        Conekta::setPlugin($this->name);
+        Conekta::setPluginVersion($this->version);
+        Conekta::setLocale('es');
 
+
+
+        //ALL $data VAR ASSIGNATION IS FREE OF VALIDATION
         $data             = ckpg_get_request_data($this->order);
         $amount           = (int) $data['amount'];
         $items            = $this->order->get_items();
@@ -231,7 +210,11 @@ class WC_Conekta_Card_Gateway extends WC_Conekta_Plugin
         $shipping_contact = ckpg_build_shipping_contact($data);
         $tax_lines        = ckpg_build_tax_lines($taxes);
         $customer_info    = ckpg_build_customer_info($data);
-        $order_metadata   = ckpg_build_order_metadata($data);
+        $order_metadata   = ckpg_build_order_metadata($data + array(
+                                                                    'plugin_conekta_version' => $this->version,
+                                                                    'woocommerce_version'   => $woocommerce->version,
+                                                                    )
+                                                    );
         $order_details    = array(
             'currency'         => $data['currency'],
             'line_items'       => $line_items,
@@ -245,6 +228,7 @@ class WC_Conekta_Card_Gateway extends WC_Conekta_Plugin
             $order_details = array_merge($order_details, array('shipping_contact' => $shipping_contact));
         }
 
+
         if (!empty($order_metadata)) {
             $order_details = array_merge($order_details, array('metadata' => $order_metadata));
         }
@@ -254,10 +238,10 @@ class WC_Conekta_Card_Gateway extends WC_Conekta_Plugin
         try {
             $conekta_order_id = esc_html(get_post_meta($this->order->get_id(), 'conekta-order-id', true));
             if (!empty($conekta_order_id)) {
-                $order = \Conekta\Order::find($conekta_order_id);
+                $order = Order::find($conekta_order_id);
                 $order->update($order_details);
             } else {
-                $order = \Conekta\Order::create($order_details);
+                $order = Order::create($order_details);
             }
             //ORDER ID IS GENERATED BY RESPONSE
             update_post_meta($this->order->get_id(), 'conekta-order-id', $order->id);
@@ -281,17 +265,10 @@ class WC_Conekta_Card_Gateway extends WC_Conekta_Plugin
             if ($data['monthly_installments'] > 1) {
                 update_post_meta( $this->order->get_id(), 'meses-sin-intereses', $data['monthly_installments']);
             }
-
             update_post_meta( $this->order->get_id(), 'transaction_id', $this->transaction_id);
-            update_post_meta( $this->order->get_id(), 'additional_branch_track', mg_format_additional_branch_track( $this->account, $this->order->get_id(), $order->id ) );
-
-            $this->order->add_order_note( 'Realizando pago para: ' . $this->account['name'] );
-
-            mg_gateways_send_mail_notification( $this->order, true );
-
             return true;
 
-        } catch(\Conekta\Handler $e) {
+        } catch(Handler $e) {
             $description = $e->getMessage();
             global $wp_version;
             if (version_compare($wp_version, '4.1', '>=')) {

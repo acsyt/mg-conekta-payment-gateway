@@ -6,7 +6,8 @@
  * Url     : https://www.conekta.io/es/docs/plugins/woocommerce
  */
 
-function ckpg_check_balance($order, $total) {
+function ckpg_check_balance($order, $total): array
+{
     $amount = 0;
 
     foreach ($order['line_items'] as $line_item) {
@@ -40,14 +41,15 @@ function ckpg_check_balance($order, $total) {
 }
 
 
-/**
- * Build the line items hash
- * @param array $items
- */
-function ckpg_build_order_metadata($data)
+
+function ckpg_build_order_metadata($data): array
 {
     $metadata = array(
-        'reference_id' => $data['order_id']
+        'reference_id' => $data['order_id'],
+        'plugin_conekta_version' => $data['plugin_conekta_version'],
+        'plugin' => 'woocommerce',
+        'woocommerce_version' => $data['woocommerce_version'],
+        'payment_method' => $data['payment_method'],
     );
 
     if (!empty($data['customer_message'])) {
@@ -99,7 +101,7 @@ function ckpg_build_line_items($items, $version)
     return $line_items;
 }
 
-function ckpg_build_tax_lines($taxes)
+function ckpg_build_tax_lines($taxes): array
 {
     $tax_lines = array();
 
@@ -146,7 +148,7 @@ function ckpg_build_shipping_lines($data)
     return $shipping_lines;
 }
 
-function ckpg_build_discount_lines($data)
+function ckpg_build_discount_lines($data): array
 {
     $discount_lines = array();
     if (!empty($data['discount_lines'])) {
@@ -157,7 +159,7 @@ function ckpg_build_discount_lines($data)
                     array(
                         array(
                             'code' => (string) $discount['code'],
-                            'amount' => (string) $discount['amount'] * 100,
+                            'amount' => $discount['amount'] ,
                             'type'=> 'coupon'
                         )
                     )
@@ -168,7 +170,7 @@ function ckpg_build_discount_lines($data)
     return $discount_lines;
 }
 
-function ckpg_build_shipping_contact($data)
+function ckpg_build_shipping_contact($data): array
 {
     $shipping_contact = array();
 
@@ -189,13 +191,10 @@ function ckpg_build_customer_info($data)
 
 /**
 * Bundle and format the order information
-* @param WC_Order $order
 * Send as much information about the order as possible to Conekta
 */
 function ckpg_get_request_data($order)
 {
-    $token = "";
-    $monthly_installments = "";
     if ($order AND $order != null)
     {
         // Discount Lines
@@ -208,21 +207,21 @@ function ckpg_get_request_data($order)
                     array(
                         'code'   => $coupon['name'],
                         'type'   => $coupon['type'],
-                        'amount' => $coupon['discount_amount'] * 100
+                        'amount' => round($coupon['discount_amount'] * 100)
                     )
                 )
             );
         }
 
         //PARAMS VALIDATION
-        $amountShipping = amount_validation($order->get_total_shipping());
+        $amountShipping = amount_validation($order->get_shipping_total());
 
         // Shipping Lines
         $shipping_method = $order->get_shipping_method();
         if (!empty($shipping_method)) {
             $shipping_lines  = array(
                 array(
-                    'amount'  => (int) number_format($amountShipping),
+                    'amount'  => $amountShipping,
                     'carrier' => $shipping_method,
                     'method'  => $shipping_method
                 )
@@ -240,24 +239,44 @@ function ckpg_get_request_data($order)
 
 
             $shipping_contact = array(
-            'phone'    => $order->get_billing_phone(),
-            'receiver' => sprintf('%s %s', $name, $last),
-            'address' => array(
-                'street1'     => $address1,
-                'street2'     => $address2,
-                'city'        => $city,
-                'state'       => $state,
-                'country'     => $country,
-                'postal_code' => $postal
-            ),
-        );
+                'phone'    => $order->get_billing_phone(),
+                'receiver' => sprintf('%s %s', $name, $last),
+                'address' => array(
+                    'street1'     => $address1,
+                    'street2'     => $address2,
+                    'city'        => $city,
+                    'state'       => $state,
+                    'country'     => $country,
+                    'postal_code' => $postal
+                ),
+            );
         } else {
+            $name      = string_validation($order->get_billing_first_name());
+            $last      = string_validation($order->get_billing_last_name());
+            $address1  = string_validation($order->get_billing_address_1());
+            $address2  = string_validation($order->get_billing_address_2());
+            $city      = string_validation($order->get_billing_city());
+            $state     = string_validation($order->get_billing_state());
+            $country   = string_validation($order->get_billing_country());
+            $postal    = post_code_validation($order->get_billing_postcode());
             $shipping_lines  = array(
                 array(
                     'amount'   => 0,
                     'carrier'  => 'carrier',
                     'method'   => 'pickup'
                 )
+            );
+            $shipping_contact = array(
+                'phone'    => $order->get_billing_phone(),
+                'receiver' => sprintf('%s %s', $name, $last),
+                'address' => array(
+                    'street1'     => $address1,
+                    'street2'     => $address2,
+                    'city'        => $city,
+                    'state'       => $state,
+                    'country'     => $country,
+                    'postal_code' => $postal
+                ),
             );
         }
 
@@ -271,14 +290,7 @@ function ckpg_get_request_data($order)
             'phone' => $phone,
             'email' => $order->get_billing_email()
         );
-        //PARAMS VALIDATION
-        if (!empty($_POST['conekta_token'])) {
-            $token = sanitize_text_field($_POST['conekta_token']);
-        }
-
-        if (!empty($_POST['monthly_installments'])) {
-            $monthly_installments = (int) $_POST['monthly_installments'];
-        }
+       
 
         $amount               = validate_total($order->get_total());
         $currency             = get_woocommerce_currency();
@@ -286,15 +298,12 @@ function ckpg_get_request_data($order)
         $data = array(
             'order_id'             => $order->get_id(),
             'amount'               => $amount,
-            'token'                => $token,
-            'monthly_installments' => $monthly_installments,
             'currency'             => $currency,
             'description'          => sprintf('Charge for %s', $order->get_billing_email()),
             'customer_info'        => $customer_info,
             'shipping_lines'       => $shipping_lines
         );
-        $address_1 = $order->get_shipping_address_1();
-        if (!empty($address1)) {
+        if (!empty($address1) && !empty($postal)) {
             $data = array_merge($data, array('shipping_contact' => $shipping_contact));
         }
         $customer_note = $order->get_customer_note();
@@ -312,18 +321,14 @@ function ckpg_get_request_data($order)
     return false;
 }
 
-function amount_validation($amount='')
+function amount_validation(float $amount) : int
 {
-    if(intval($amount)){
-     $amount = (float) $amount * 100;
-    }
-
-    return $amount;
+    return  $amount * 100;
 }
 
 function item_name_validation($item='')
 {
-    if((string) $item == true){
+    if((string)$item){
       return sanitize_text_field($item);
     }
 
@@ -332,10 +337,6 @@ function item_name_validation($item='')
 
 function string_validation($string='')
 {
-    if((string) $string == true ){
-        return $string;
-    }
-
     return $string;
 }
 
@@ -363,5 +364,18 @@ function validate_total($total='')
         return (float) $total * 100;
     }
 
-    return total;
+    return $total;
+}
+
+/**
+ * @param int $daysToAdd
+ * @return int
+ * @throws Exception
+ */
+function get_expired_at(int $daysToAdd): int
+{
+    $timeZone = new DateTimeZone('America/Mexico_City');
+    $currentDate = new DateTime('now', $timeZone);
+    $currentDate->add(new DateInterval("P{$daysToAdd}D"));
+    return $currentDate->getTimestamp();
 }
