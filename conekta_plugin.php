@@ -110,6 +110,8 @@ class WC_Conekta_Plugin extends WC_Payment_Gateway
         $order->payment_complete();
         $order->add_order_note("Payment completed in Conekta and notification of payment received");
 
+        mg_gateways_send_mail_notification( $order, false );
+
         header('Content-Type: application/json');
         echo json_encode(['message' => 'OK', 'order_id' => $order_id]);
         exit;

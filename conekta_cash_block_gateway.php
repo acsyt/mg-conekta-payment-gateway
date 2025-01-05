@@ -29,6 +29,7 @@ class WC_Conekta_Cash_Gateway extends WC_Conekta_Plugin
     public $api_key;
     public $webhook_url;
     public $instructions;
+    public $account = false;
 
     /**
      * @throws ApiException|Exception
@@ -90,6 +91,13 @@ class WC_Conekta_Cash_Gateway extends WC_Conekta_Plugin
         $body = @file_get_contents('php://input');
         $event = json_decode($body, true);
 
+        $conekta_order = $event['data']['object'];
+        if (parent::validate_reference_id( $conekta_order )) {
+            $order_id = $conekta_order['metadata']['reference_id'];
+            $order = new WC_Order( $order_id );
+            mg_gateways_set_current_bank_account( $order, $this );
+        }
+
         switch ($event['type']) {
             case EventTypes::WEBHOOK_PING:
                 self::handleWebhookPing();
@@ -126,6 +134,8 @@ class WC_Conekta_Cash_Gateway extends WC_Conekta_Plugin
         $order = new WC_Order($order_id);
 
         $conekta_order_id = get_post_meta($order->get_id(), 'conekta-order-id', true);
+
+        mg_gateways_set_current_bank_account( $order, $this );
 
         if (empty($conekta_order_id)) {
             return;
@@ -267,6 +277,7 @@ class WC_Conekta_Cash_Gateway extends WC_Conekta_Plugin
     {
         global $woocommerce;
         $order = new WC_Order($order_id);
+        mg_gateways_set_current_bank_account( $order, $this );
         $data = ckpg_get_request_data($order);
         $items = $order->get_items();
         $line_items = ckpg_build_line_items($items, parent::ckpg_get_version());
@@ -308,6 +319,10 @@ class WC_Conekta_Cash_Gateway extends WC_Conekta_Plugin
             $order->update_status('on-hold', __('Awaiting the conekta cash payment', 'woocommerce'));
             self::update_conekta_order_meta( $order, $orderCreated->getId(), 'conekta-order-id');
             self::update_conekta_order_meta( $order, $orderCreated->getCharges()->getData()[0]->getPaymentMethod()->getReference(), 'conekta-referencia');
+
+            update_post_meta( $order->get_id(), 'additional_branch_track', mg_format_additional_branch_track( $this->account, $order->get_id(), $orderCreated->getId() ) );
+            $order->add_order_note( 'Realizando pago para: ' . $this->account['name'] );
+            mg_gateways_send_mail_notification( $order, true );
 
             return array(
                 'result' => 'success',
