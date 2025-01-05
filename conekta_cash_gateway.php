@@ -30,6 +30,7 @@ class WC_Conekta_Cash_Gateway extends WC_Conekta_Plugin
     public $live_api_key;
     public $secret_key;
     public $lang_options;
+    public $account = false;
 
     public function __construct()
     {
@@ -51,8 +52,6 @@ class WC_Conekta_Cash_Gateway extends WC_Conekta_Plugin
                                  $this->live_api_key;
 
         $this->lang_options = parent::ckpg_set_locale_options()->ckpg_get_lang_options();
-
-        $this->accounts = mg_get_bank_accounts();
 
         if (empty($this->secret_key)){
             $this->enabled = false;
@@ -224,8 +223,16 @@ class WC_Conekta_Cash_Gateway extends WC_Conekta_Plugin
 
     protected function ckpg_send_to_conekta()
     {
+        mg_gateways_set_current_bank_account( $this->order, $this );
+
         global $woocommerce;
-        //ALL $data VAR ASSIGNATION IS FREE OF VALIDATION
+        include_once('conekta_gateway_helper.php');
+        \Conekta\Conekta::setApiKey($this->secret_key);
+        \Conekta\Conekta::setApiVersion('2.0.0');
+        \Conekta\Conekta::setPlugin($this->name);
+        \Conekta\Conekta::setPluginVersion($this->version);
+        \Conekta\Conekta::setLocale('es');
+
         $data             = ckpg_get_request_data($this->order);
         $amount           = (int) $data['amount'];
         $items            = $this->order->get_items();
@@ -237,27 +244,6 @@ class WC_Conekta_Cash_Gateway extends WC_Conekta_Plugin
         $tax_lines        = ckpg_build_tax_lines($taxes);
         $customer_info    = ckpg_build_customer_info($data);
         $order_metadata   = ckpg_build_order_metadata($data);
-
-        $this->account = mg_get_bank_account_from_order( $this->order, $this->accounts );
-
-        if ( ! $this->account ) {
-          wc_add_notice('No se encontraron credenciales para realizar el pago en esta unidad, favor de contactar a un administador.', 'error');
-          return false;
-        }
-
-        $this->test_api_key     = $this->account['test_api_key'];
-        $this->live_api_key     = $this->account['live_api_key'];
-        $this->secret_key       = $this->account['debug'] ?
-                                  $this->account['test_api_key'] :
-                                  $this->account['live_api_key'];
-
-        include_once('conekta_gateway_helper.php');
-        \Conekta\Conekta::setApiKey($this->secret_key);
-        \Conekta\Conekta::setApiVersion('2.0.0');
-        \Conekta\Conekta::setPlugin($this->name);
-        \Conekta\Conekta::setPluginVersion($this->version);
-        \Conekta\Conekta::setLocale('es');
-
         $order_details    = array(
             'currency'         => $data['currency'],
             'line_items'       => $line_items,
@@ -308,9 +294,7 @@ class WC_Conekta_Cash_Gateway extends WC_Conekta_Plugin
             update_post_meta($this->order->get_id(), 'conekta-expira',     $charge->payment_method->expires_at);
             update_post_meta($this->order->get_id(), 'conekta-referencia', $charge->payment_method->reference);
 
-            // Inicio - Correo admins
-            mg_send_mail_wc_payment_notification_to_unidad( $this->order, $this->accounts, $this->id );
-            // Fin - Correo admins
+            mg_gateways_send_mail_notification( $this->order, true );
 
             return true;
         } catch(\Conekta\Handler $e) {

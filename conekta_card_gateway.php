@@ -33,6 +33,7 @@ class WC_Conekta_Card_Gateway extends WC_Conekta_Plugin
     public $publishable_key;
     public $secret_key;
     public $lang_options;
+    public $account = false;
 
     public function __construct() {
         $this->id = 'conektacard';
@@ -63,9 +64,6 @@ class WC_Conekta_Card_Gateway extends WC_Conekta_Plugin
                                       $this->live_api_key;
         $this->lang_options         = parent::ckpg_set_locale_options()->
                                     ckpg_get_lang_options();
-
-        $this->accounts = mg_get_bank_accounts();
-        //
 
         add_action('woocommerce_checkout_init', array( $this, 'checkout_init' ) );
         add_action('wp_enqueue_scripts', array($this, 'ckpg_payment_fields'));
@@ -200,6 +198,7 @@ class WC_Conekta_Card_Gateway extends WC_Conekta_Plugin
         }
 
         if ( $unidad_term_id ) {
+            $this->accounts = mg_get_bank_accounts();
             $current_account = $this->accounts[ $unidad_term_id ];
 
             woocommerce_form_field( 'current_account_token', array(
@@ -212,8 +211,16 @@ class WC_Conekta_Card_Gateway extends WC_Conekta_Plugin
 
     protected function ckpg_send_to_conekta()
     {
+        mg_gateways_set_current_bank_account( $this->order, $this );
+
         global $woocommerce;
-        //ALL $data VAR ASSIGNATION IS FREE OF VALIDATION
+        include_once('conekta_gateway_helper.php');
+        \Conekta\Conekta::setApiKey($this->secret_key);
+        \Conekta\Conekta::setApiVersion('2.0.0');
+        \Conekta\Conekta::setPlugin($this->name);
+        \Conekta\Conekta::setPluginVersion($this->version);
+        \Conekta\Conekta::setLocale('es');
+
         $data             = ckpg_get_request_data($this->order);
         $amount           = (int) $data['amount'];
         $items            = $this->order->get_items();
@@ -225,28 +232,6 @@ class WC_Conekta_Card_Gateway extends WC_Conekta_Plugin
         $tax_lines        = ckpg_build_tax_lines($taxes);
         $customer_info    = ckpg_build_customer_info($data);
         $order_metadata   = ckpg_build_order_metadata($data);
-
-        $this->account = mg_get_bank_account_from_order( $this->order, $this->accounts );
-
-        if ( ! $this->account ) {
-          wc_add_notice('No se encontraron credenciales para realizar el pago en esta unidad, favor de contactar a un administador.', 'error');
-          return false;
-        }
-
-        $this->test_api_key         = $this->account['test_api_key'];
-        $this->live_api_key         = $this->account['live_api_key'];
-        $this->test_publishable_key = $this->account['test_publishable_key'];
-        $this->live_publishable_key = $this->account['live_publishable_key'];
-        $this->publishable_key      = $this->account['debug'] ? $this->account['test_publishable_key'] : $this->account['live_publishable_key'];
-        $this->secret_key           = $this->account['debug'] ? $this->account['test_api_key'] : $this->account['live_api_key'];
-
-        include_once('conekta_gateway_helper.php');
-        \Conekta\Conekta::setApiKey($this->secret_key);
-        \Conekta\Conekta::setApiVersion('2.0.0');
-        \Conekta\Conekta::setPlugin($this->name);
-        \Conekta\Conekta::setPluginVersion($this->version);
-        \Conekta\Conekta::setLocale('es');
-
         $order_details    = array(
             'currency'         => $data['currency'],
             'line_items'       => $line_items,
@@ -259,7 +244,6 @@ class WC_Conekta_Card_Gateway extends WC_Conekta_Plugin
         if (!empty($shipping_contact)) {
             $order_details = array_merge($order_details, array('shipping_contact' => $shipping_contact));
         }
-
 
         if (!empty($order_metadata)) {
             $order_details = array_merge($order_details, array('metadata' => $order_metadata));
@@ -303,9 +287,7 @@ class WC_Conekta_Card_Gateway extends WC_Conekta_Plugin
 
             $this->order->add_order_note( 'Realizando pago para: ' . $this->account['name'] );
 
-            // Inicio - Correo admins
-            mg_send_mail_wc_payment_notification_to_unidad( $this->order, $this->accounts, $this->id );
-            // Fin - Correo admins
+            mg_gateways_send_mail_notification( $this->order, true );
 
             return true;
 

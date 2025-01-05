@@ -28,6 +28,7 @@ class WC_Conekta_Spei_Gateway extends WC_Conekta_Plugin
     public $account_owner;
     public $secret_key;
     public $lang_options;
+    public $account = false;
 
     public function __construct()
     {
@@ -50,8 +51,6 @@ class WC_Conekta_Spei_Gateway extends WC_Conekta_Plugin
                                  $this->live_api_key;
 
         $this->lang_options = parent::ckpg_set_locale_options()->ckpg_get_lang_options();
-
-        $this->accounts = mg_get_bank_accounts();
 
         add_action(
             'woocommerce_update_options_payment_gateways_' . $this->id ,
@@ -217,8 +216,16 @@ class WC_Conekta_Spei_Gateway extends WC_Conekta_Plugin
 
     protected function ckpg_send_to_conekta()
     {
+        mg_gateways_set_current_bank_account( $this->order, $this );
+
         global $woocommerce;
-        //ALL $data VAR ASSIGNATION IS FREE OF VALIDATION
+        include_once('conekta_gateway_helper.php');
+        \Conekta\Conekta::setApiKey($this->secret_key);
+        \Conekta\Conekta::setApiVersion('2.0.0');
+        \Conekta\Conekta::setPlugin($this->name);
+        \Conekta\Conekta::setPluginVersion($this->version);
+        \Conekta\Conekta::setLocale('es');
+
         $data             = ckpg_get_request_data($this->order);
         $amount           = (int) $data['amount'];
         $items            = $this->order->get_items();
@@ -238,27 +245,6 @@ class WC_Conekta_Spei_Gateway extends WC_Conekta_Plugin
             'discount_lines'   => $discount_lines,
             'tax_lines'        => $tax_lines
         );
-
-        $this->account = mg_get_bank_account_from_order( $this->order, $this->accounts );
-
-        if ( ! $this->account ) {
-          wc_add_notice('No se encontraron credenciales para realizar el pago en esta unidad, favor de contactar a un administador.', 'error');
-          return false;
-        }
-
-        $this->account_owner    = $this->account['title'];
-        $this->test_api_key     = $this->account['test_api_key'];
-        $this->live_api_key     = $this->account['live_api_key'];
-        $this->secret_key       = $this->account['debug'] ?
-                                  $this->account['test_api_key'] :
-                                  $this->account['live_api_key'];
-
-        include_once('conekta_gateway_helper.php');
-        \Conekta\Conekta::setApiKey($this->secret_key);
-        \Conekta\Conekta::setApiVersion('2.0.0');
-        \Conekta\Conekta::setPlugin($this->name);
-        \Conekta\Conekta::setPluginVersion($this->version);
-        \Conekta\Conekta::setLocale('es');
 
         if (!empty($shipping_contact)) {
             $order_details = array_merge($order_details, array('shipping_contact' => $shipping_contact));
@@ -297,9 +283,7 @@ class WC_Conekta_Spei_Gateway extends WC_Conekta_Plugin
             update_post_meta( $this->order->get_id(), 'conekta-expira', $charge->payment_method->expires_at );
             update_post_meta( $this->order->get_id(), 'conekta-clabe', $charge->payment_method->clabe );
 
-            // Inicio - Correo admins
-            mg_send_mail_wc_payment_notification_to_unidad( $this->order, $this->accounts, $this->id );
-            // Fin - Correo admins
+            mg_gateways_send_mail_notification( $this->order, true );
 
             return true;
         } catch(\Conekta\Handler $e) {

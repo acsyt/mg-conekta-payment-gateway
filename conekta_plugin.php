@@ -23,9 +23,6 @@ class WC_Conekta_Plugin extends WC_Payment_Gateway
 	protected $lang;
 	protected $lang_messages;
 
-	protected $account = array();
-	protected $accounts = array();
-
 	public function ckpg_get_version()
 	{
 		return $this->version;
@@ -79,9 +76,7 @@ class WC_Conekta_Plugin extends WC_Payment_Gateway
 		$mail_admin->send(get_option("admin_email"), $title, $message);
 		unset($mail_admin);
 
-        // Inicio - Correo admins
-		mg_send_mail_wc_payment_notification_to_unidad( $order, $this->accounts, $this->id, false );
-        // Fin - Correo admins
+		mg_gateways_send_mail_notification( $order, false );
 	}
 
 	public function ckpg_assemble_email_payment($order)
