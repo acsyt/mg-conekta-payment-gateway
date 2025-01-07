@@ -88,25 +88,20 @@ class WC_Conekta_Bank_Transfer_Gateway extends WC_Conekta_Plugin
         $body = @file_get_contents('php://input');
         $event = json_decode($body, true);
 
-        $conekta_order = $event['data']['object'];
-        if (parent::validate_reference_id( $conekta_order )) {
-            $order_id = $conekta_order['metadata']['reference_id'];
-            $order = new WC_Order( $order_id );
-            mg_gateways_set_current_bank_account( $order, $this );
-        }
-
         switch ($event['type']) {
             case EventTypes::WEBHOOK_PING:
                 self::handleWebhookPing();
                 break;
 
             case EventTypes::ORDER_PAID:
+                parent::set_bank_account_from_webhook_event( $event, $this );
                 self::check_if_payment_payment_method_webhook($this->GATEWAY_NAME, $event);
                 self::handleOrderPaid($this->get_api_instance(), $event);
                 break;
 
             case EventTypes::ORDER_EXPIRED:
             case EventTypes::ORDER_CANCELED:
+                parent::set_bank_account_from_webhook_event( $event, $this );
                 self::check_if_payment_payment_method_webhook($this->GATEWAY_NAME, $event);
                 self::handleOrderExpiredOrCanceled($this->get_api_instance(),$event);
                 break;

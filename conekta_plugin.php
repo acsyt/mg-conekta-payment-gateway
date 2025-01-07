@@ -164,4 +164,14 @@ class WC_Conekta_Plugin extends WC_Payment_Gateway
         $order->save();
     }
 
+    public static function set_bank_account_from_webhook_event( $event, $gateway )
+    {
+        $conekta_order = $event['data']['object'];
+        if ( self::validate_reference_id( $conekta_order ) ) {
+            $order_id = $conekta_order['metadata']['reference_id'];
+            $order = new WC_Order( $order_id );
+            mg_gateways_set_current_bank_account( $order, $gateway );
+        }
+    }
+    
 }
