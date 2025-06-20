@@ -29,7 +29,8 @@ class WC_Conekta_Cash_Gateway extends WC_Conekta_Plugin
     public $api_key;
     public $webhook_url;
     public $instructions;
-    public $account = false;
+    public $locale = 'es';
+    public $i18n = [];
 
     /**
      * @throws ApiException|Exception
@@ -50,6 +51,8 @@ class WC_Conekta_Cash_Gateway extends WC_Conekta_Plugin
         $this->api_key = $this->settings['api_key'];
         $this->webhook_url = $this->settings['webhook_url'];
         $this->instructions = $this->settings['instructions'];
+        $this->i18n = include plugin_dir_path(__FILE__) . "includes/i18n/{$this->locale}.php";
+
 
         add_action('woocommerce_update_options_payment_gateways_' . $this->id, array($this, 'process_admin_options'));
         add_action('woocommerce_thankyou_' . $this->id, array($this, 'ckpg_thankyou_page'));
@@ -97,16 +100,14 @@ class WC_Conekta_Cash_Gateway extends WC_Conekta_Plugin
                 break;
 
             case EventTypes::ORDER_PAID:
-                parent::set_bank_account_from_webhook_event( $event, $this );
                 self::check_if_payment_payment_method_webhook($this->GATEWAY_NAME, $event);
-                self::handleOrderPaid($this->get_api_instance(), $event);
+                self::handleOrderPaid($this->get_api_instance($this->settings['api_key'], $this->version), $event);
                 break;
 
             case EventTypes::ORDER_EXPIRED:
             case EventTypes::ORDER_CANCELED:
-                parent::set_bank_account_from_webhook_event( $event, $this );
                 self::check_if_payment_payment_method_webhook($this->GATEWAY_NAME, $event);
-                self::handleOrderExpiredOrCanceled($this->get_api_instance(),$event);
+                self::handleOrderExpiredOrCanceled($this->get_api_instance($this->settings['api_key'], $this->version), $event);
                 break;
             default:
                 break;
@@ -114,41 +115,116 @@ class WC_Conekta_Cash_Gateway extends WC_Conekta_Plugin
     }
 
 
-    public function get_api_instance(): OrdersApi
-    {
-        return  new OrdersApi(null, Configuration::getDefaultConfiguration()->setAccessToken($this->settings['api_key']));
+    private function get_product_type_renderers(): array {
+        return [
+            'cash_in' => [$this, 'render_cash_in'],
+            'pespay_cash_in' => [$this, 'render_cash_in'],
+            'oxxo' => [$this, 'render_oxxo'],
+            'bbva_cash_in' => [$this, 'render_bbva'],
+        ];
     }
+
+    function render_ckpg_header($product_type) {
+        $text = $this->i18n['header'][$product_type] ?? $this->i18n['header']['default'];
+        echo "<div class=\"conekta-reference-title\">$text</div>";
+    }
+    
+    function render_ckpg_instructions($instructions, $product_type, $reference, $agreement) {
+        echo '<div class="conekta-instructions"><ol>';
+        foreach ($instructions as $line) {
+            echo "<li>$line</li>";
+        }
+        echo '</ol>';
+        echo '</div>';
+    }
+    
+    function render_ckpg_logos($logos, $product_type) {
+        echo '<div class="conekta-logo-row">';
+        foreach ($logos as $logo) {
+            echo '<img src="' . esc_url($logo) . '" alt="Logo" class="' . $product_type .'-logo">';
+        }
+        echo '</div>';
+    }
+    
+    function render_ckpg_barcode($barcode_url) {
+        if (!empty($barcode_url)) {
+            echo '<div class="conekta-barcode"><img src="' . esc_url($barcode_url) . '" alt="Código de barras"></div>';
+        }
+    }
+    
+    function render_ckpg_reference($reference) {
+        echo '<div class="conekta-agreement-text">' . esc_html($reference) . '</div>';
+    }
+    
     /**
      * Output for the order received page.
      * @param string $order_id
      * @throws ApiException
      */
     function ckpg_thankyou_page($order_id)
-    {
+{
+    $order = new WC_Order($order_id);
+    $conekta_order_id = get_post_meta($order->get_id(), 'conekta-order-id', true);
+    if (empty($conekta_order_id)) return;
 
-        $order = new WC_Order($order_id);
+    $conekta_order = $this->get_api_instance($this->settings['api_key'], $this->version)->getorderbyid($conekta_order_id);
+    $assets = include plugin_dir_path(__FILE__) . 'includes/blocks/payment-instructions.php';
+    $logos_map = $assets['logos'];
+    $renderers = $this->get_product_type_renderers();
 
-        $conekta_order_id = get_post_meta($order->get_id(), 'conekta-order-id', true);
+    echo '<div class="conekta-charges-container">';
+    foreach ($conekta_order->getCharges()->getData() as $charge) {
+        $payment_method = $charge->getPaymentMethod();
+        $method_type = $payment_method->getObject();
+        $product_type = method_exists($payment_method, 'getProductType') ? $payment_method->getProductType() : '';
 
-        mg_gateways_set_current_bank_account( $order, $this );
+        if ($method_type === 'cash_payment' && !empty($product_type)) {
+            $reference = $payment_method->getReference();
+            $barcode_url = $payment_method->getBarcodeUrl();
+            $agreement = method_exists($payment_method, 'getAgreement') ? $payment_method->getAgreement() : null;
+            $logos = $logos_map[$product_type] ?? [];
+            $instructions = $this->i18n['instructions'][$product_type] ?? [];
 
-        if (empty($conekta_order_id)) {
-            return;
-        }
-        $conekta_order = $this->get_api_instance()->getorderbyid($conekta_order_id);
+            echo '<div class="conekta-box">';
+            $this->render_ckpg_header($product_type);
+            $this->render_ckpg_logos($logos, $product_type);
+            $render_function = $renderers[$product_type] ?? $renderers["cash_in"];
 
-        foreach ($conekta_order->getCharges()->getData() as $charge) {
-            $payment_method = $charge->getPaymentMethod()->getObject();
-            if ($payment_method == 'cash_payment') {
-                $reference = $charge->getPaymentMethod()->getReference();
-                $barcode_url = $charge->getPaymentMethod()->getBarcodeUrl();
-                echo '<p style="font-size: 30px"><strong>' . __('Referencia') . ':</strong> ' . $reference . '</p>';
-                echo '<p><img src="' . esc_url($barcode_url) . '" alt="Código QR" style="border: 2px solid #000; margin: 10px; box-shadow: 3px 3px 10px rgba(0, 0, 0, 0.2);"></p>';
-                echo '<p>Se cobrará una comisión adicional al momento de realizar el pago.</p>';
-                echo '<p>INSTRUCCIONES: '. esc_html($this->instructions) .'</p>';
-               
+            if (isset($render_function) && is_callable($render_function)) {
+                call_user_func($render_function, [
+                    'product_type' => $product_type,
+                    'reference' => $reference,
+                    'barcode_url' => $barcode_url,
+                    'agreement' => $agreement,
+                    'logos' => $logos,
+                    'instructions' => $instructions,
+                ]);
             }
+
+            echo '<button class="conekta-copy-button" onclick="navigator.clipboard.writeText(\'' . esc_js($reference) . '\')">' . $this->i18n['button_copy'] . '</button>';
+            $this->render_ckpg_instructions($instructions, $product_type, $reference, $agreement);
+            echo '</div>';
         }
+    }
+    echo '</div>';
+}
+
+    function render_bbva($data) {
+        echo '<p class="conekta-commission">' . $this->i18n['commission_note']['bbva_cash_in'] . '</p>';
+        echo '<p class="conekta-agreement-text conekta-small-text">' . $this->i18n['agreement'] . ' ' . esc_html($data['agreement']) . '</p>';
+        echo '<p class="conekta-agreement-text conekta-small-text">' . $this->i18n['reference'] . ' ' . esc_html($data['reference']) . '</p>';
+    }
+
+    function render_cash_in($data) {
+        echo '<p class="conekta-conekta-link">' . $this->i18n['extra_note_cash_in'] . '</p>';
+        echo '<p class="conekta-commission">' . $this->i18n['commission_note']['others'] . '</p>';
+        $this->render_ckpg_barcode($data['barcode_url']);
+        $this->render_ckpg_reference($data['reference']);
+    }
+
+    function render_oxxo($data) {
+        $this->render_ckpg_barcode($data['barcode_url']);
+        $this->render_ckpg_reference($data['reference']);
     }
 
     public function ckpg_init_form_fields()
@@ -272,15 +348,20 @@ class WC_Conekta_Cash_Gateway extends WC_Conekta_Plugin
     {
         global $woocommerce;
         $order = new WC_Order($order_id);
-        mg_gateways_set_current_bank_account( $order, $this );
         $data = ckpg_get_request_data($order);
         $items = $order->get_items();
-        $line_items = ckpg_build_line_items($items, parent::ckpg_get_version());
+        $taxes = $order->get_taxes();
+        $fees = $order->get_fees();
+        $fees_formatted = ckpg_build_get_fees($fees);
+        $discounts_data = $fees_formatted['discounts'];
+        $fees_data = $fees_formatted['fees'];
+        $tax_lines = ckpg_build_tax_lines($taxes);
+        $tax_lines = array_merge($tax_lines, $fees_data);
         $discount_lines = ckpg_build_discount_lines($data);
+        $discount_lines = array_merge($discount_lines, $discounts_data);
+        $line_items = ckpg_build_line_items($items, parent::ckpg_get_version());
         $shipping_lines = ckpg_build_shipping_lines($data);
         $shipping_contact = ckpg_build_shipping_contact($data);
-        $taxes = $order->get_taxes();
-        $tax_lines = ckpg_build_tax_lines($taxes);
         $customer_info = ckpg_build_customer_info($data);
         $order_metadata = ckpg_build_order_metadata($data + array(
                 'plugin_conekta_version' => $this->version,
@@ -310,14 +391,10 @@ class WC_Conekta_Cash_Gateway extends WC_Conekta_Plugin
             $rq->setShippingContact(new CustomerShippingContacts($shipping_contact));
         }
         try {
-            $orderCreated = $this->get_api_instance()->createOrder($rq);
+            $orderCreated = $this->get_api_instance($this->settings['api_key'], $this->version)->createOrder($rq);
             $order->update_status('on-hold', __('Awaiting the conekta cash payment', 'woocommerce'));
             self::update_conekta_order_meta( $order, $orderCreated->getId(), 'conekta-order-id');
             self::update_conekta_order_meta( $order, $orderCreated->getCharges()->getData()[0]->getPaymentMethod()->getReference(), 'conekta-referencia');
-
-            update_post_meta( $order->get_id(), 'additional_branch_track', mg_format_additional_branch_track( $this->account, $order->get_id(), $orderCreated->getId() ) );
-            $order->add_order_note( 'Realizando pago para: ' . $this->account['name'] );
-            mg_gateways_send_mail_notification( $order, true );
 
             return array(
                 'result' => 'success',
@@ -351,6 +428,15 @@ function ckpg_conekta_cash_add_gateway($methods)
 }
 
 add_filter('woocommerce_payment_gateways', 'ckpg_conekta_cash_add_gateway');
+
+add_action('wp_enqueue_scripts', function () {
+    wp_enqueue_style(
+        'ckpg-checkout-style',
+        plugin_dir_url(__FILE__) . 'assets/styles.css',
+        [],
+        '1.0'
+    );
+});
 
 add_action('woocommerce_blocks_loaded', 'woocommerce_gateway_conekta_cash_woocommerce_block_support');
 function woocommerce_gateway_conekta_cash_woocommerce_block_support()

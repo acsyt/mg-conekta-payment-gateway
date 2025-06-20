@@ -1,10 +1,10 @@
 === Conekta Payment Gateway ===
-Contributors: conekta, fcarrero, interfacesconekta
+Contributors: conekta, interfacesconekta
 Tags: free, cash, conekta, mexico, payment gateway
 Requires at least: 6.1
 Tested up to: 6.7.1
 Requires PHP: 7.4
-Stable tag: 5.0.8
+Stable tag: 5.2.5
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -47,6 +47,22 @@ By following these steps, you'll successfully install and configure the Conekta 
 `/assets/screenshot-2.png`
 
 == Changelog ==
+= 5.2.5 =
+* Removes useless alert in error handling
+= 5.2.4 =
+* Fix issue with tokenizer container unmount
+= 5.2.3 =
+* Fix hardcoded url in classic checkout
+= 5.2.2 =
+* support card payment integration with Conekta Component was recovered, support for classic-checkout was added
+= 5.2.1 =
+* Revert support card payment integration with Conekta Component
+= 5.2.0 =
+* support card payment integration with Conekta Component
+= 5.1.0 =
+* Added bnpl payment method
+= 5.0.9 =
+* Added support for custom rates and discounts
 = 5.0.8 =
 * Upgrade Wordpress version
 = 5.0.7 =

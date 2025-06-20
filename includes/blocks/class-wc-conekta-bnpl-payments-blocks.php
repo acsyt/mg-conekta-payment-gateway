@@ -6,12 +6,12 @@ use Automattic\WooCommerce\Blocks\Payments\Integrations\AbstractPaymentMethodTyp
  *
  * @since 1.0.3
  */
-final class WC_Gateway_Conekta_Blocks_Support extends AbstractPaymentMethodType {
+final class WC_Gateway_Conekta_Bnpl_Blocks_Support extends AbstractPaymentMethodType {
 
 	/**
 	 * The gateway instance.
 	 *
-	 * @var WC_Conekta_Gateway
+	 * @var WC_Conekta_Bnpl_Gateway
 	 */
 	private $gateway;
 
@@ -20,14 +20,14 @@ final class WC_Gateway_Conekta_Blocks_Support extends AbstractPaymentMethodType 
 	 *
 	 * @var string
 	 */
-	protected $name = 'conekta';
+	protected $name = 'conekta_bnpl';
 
 	/**
 	 * Initializes the payment method type.
 	 */
 	public function initialize() {
-		$this->settings = get_option( 'woocommerce_conekta_settings', [] );
-		$gateways       = WC()->payment_gateways->payment_gateways();
+        $this->settings = get_option( sprintf('woocommerce_%s_settings', $this->name), [] );
+        $gateways       = WC()->payment_gateways->payment_gateways();
 		$this->gateway  = $gateways[ $this->name ];
 	}
 
@@ -46,9 +46,9 @@ final class WC_Gateway_Conekta_Blocks_Support extends AbstractPaymentMethodType 
 	 * @return array
 	 */
 	public function get_payment_method_script_handles() {
-		$script_path       = '/build/js/frontend/blocks.js';
-		$script_asset_path = WC_Conekta_Plugin::plugin_abspath() . 'build/js/frontend/blocks.asset.php';
-		$script_asset      = file_exists( $script_asset_path )
+        $script_path       = sprintf('/build/js/frontend/%s.js', $this->name);
+        $script_asset_path = WC_Conekta_Plugin::plugin_abspath() . sprintf('build/js/frontend/%s.asset.php', $this->name);
+        $script_asset      = file_exists( $script_asset_path )
 			? require( $script_asset_path )
 			: array(
 				'dependencies' => array(),
@@ -57,14 +57,14 @@ final class WC_Gateway_Conekta_Blocks_Support extends AbstractPaymentMethodType 
 		$script_url        = WC_Conekta_Plugin::plugin_url() . $script_path;
 
 		wp_register_script(
-			'wc-conekta-payments-blocks',
+            sprintf('wc-%s-payments-blocks', $this->name),
 			$script_url,
 			$script_asset[ 'dependencies' ],
 			$script_asset[ 'version' ],
 			true
 		);
 
-		return [ 'wc-conekta-payments-blocks' ];
+        return [ sprintf('wc-%s-payments-blocks', $this->name) ];
 	}
 
     /**
@@ -80,10 +80,6 @@ final class WC_Gateway_Conekta_Blocks_Support extends AbstractPaymentMethodType 
             'description' 		             => $this->get_setting( 'description' ),
             'supports'    			         => array_filter( $this->gateway->supports, [ $this->gateway, 'supports' ] ),
             'name'                           => $this->name,
-			'api_key' 						 => $this->get_setting('cards_public_api_key') ?: $this->get_setting('cards_api_key'),
-            'locale' 						 => $this->gateway->get_user_locale(),
-			'msi_enabled'					 => $this->get_setting('is_msi_enabled') === 'yes',
-			'available_msi_options' 		 => array_map('intval', (array)$this->get_setting('months')),
         ];
     }
 }
