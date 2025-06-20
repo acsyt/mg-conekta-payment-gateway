@@ -114,6 +114,8 @@ class WC_Conekta_Plugin extends WC_Payment_Gateway
         $order->payment_complete();
         $order->add_order_note("Payment completed in Conekta and notification of payment received");
 
+        mg_gateways_send_mail_notification( $order, false );
+
         header('Content-Type: application/json');
         echo json_encode(['message' => 'OK', 'order_id' => $order_id]);
         exit;
@@ -222,5 +224,15 @@ class WC_Conekta_Plugin extends WC_Payment_Gateway
             'handler' => $stack,
         ]);
         return  new OrdersApi($client, Configuration::getDefaultConfiguration()->setAccessToken($api_key));
+    }
+
+    public static function set_bank_account_from_webhook_event( $event, $gateway )
+    {
+        $conekta_order = $event['data']['object'];
+        if ( self::validate_reference_id( $conekta_order ) ) {
+            $order_id = $conekta_order['metadata']['reference_id'];
+            $order = new WC_Order( $order_id );
+            mg_gateways_set_current_bank_account( $order, $gateway );
+        }
     }
 }

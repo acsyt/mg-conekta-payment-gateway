@@ -29,6 +29,7 @@ class WC_Conekta_Gateway extends WC_Conekta_Plugin
     public $api_key;
     public $public_api_key;
     public $webhook_url;
+    public $account = false;
 
     /**
      * @throws ApiException|Exception
@@ -105,12 +106,14 @@ class WC_Conekta_Gateway extends WC_Conekta_Plugin
                 break;
 
             case EventTypes::ORDER_PAID:
+                parent::set_bank_account_from_webhook_event( $event, $this );
                 self::check_if_payment_payment_method_webhook($this->GATEWAY_NAME, $event);
                 self::handleOrderPaid($this->get_api_instance($this->settings['cards_api_key'], $this->version), $event);
                 break;
 
             case EventTypes::ORDER_EXPIRED:
             case EventTypes::ORDER_CANCELED:
+                parent::set_bank_account_from_webhook_event( $event, $this );
                 self::check_if_payment_payment_method_webhook($this->GATEWAY_NAME, $event);
                 self::handleOrderExpiredOrCanceled($this->get_api_instance($this->settings['cards_api_key'], $this->version), $event);
                 break;
@@ -275,6 +278,7 @@ class WC_Conekta_Gateway extends WC_Conekta_Plugin
 
     protected function process_conekta_payment_for_order($order, $token_id, $msi_option, &$error_message = null) {
         try {
+            mg_gateways_set_current_bank_account( $order, $this );
             $data = ckpg_get_request_data($order);
             $items = $order->get_items();
             $taxes = $order->get_taxes();
@@ -331,6 +335,10 @@ class WC_Conekta_Gateway extends WC_Conekta_Plugin
             $orderCreated = $this->get_api_instance($this->settings['cards_api_key'], $this->version)->createOrder($rq, $this->get_user_locale());
             $order->update_status('pending', __('Esperando el pago con Conekta', 'woocommerce'));
             self::update_conekta_order_meta($order, $orderCreated->getId(), 'conekta-order-id');
+
+            update_post_meta( $order->get_id(), 'additional_branch_track', mg_format_additional_branch_track( $this->account, $order->get_id(), $orderCreated->getId() ) );
+            $order->add_order_note( 'Realizando pago para: ' . $this->account['name'] );
+            mg_gateways_send_mail_notification( $order, true );
         
             return true;
         } catch (ApiException $e) {

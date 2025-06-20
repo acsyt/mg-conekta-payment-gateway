@@ -90,8 +90,14 @@ function ckpg_enqueue_classic_checkout_script() {
             $locale = get_locale();
             $short_locale = substr($locale, 0, 2);
 
+            // An alternative to this is grabbing the public api key from the frontend using a selector
+            $accounts = mg_get_bank_accounts( 'conekta' );
+            $account  = mg_get_bank_account_from_current_user( $accounts );
+
+            $public_api_key = $account['debug'] ? $account['test_publishable_key'] : $account['live_publishable_key'];
+
             wp_localize_script('conekta-classic-checkout', 'conekta_settings', [
-                'public_key' => $settings['cards_public_api_key'] ?? '',
+                'public_key' => $public_api_key ?? '',
                 'enable_msi' => $settings['is_msi_enabled'] ?? 'no',
                 'available_msi_options' => array_map('intval', (array)($settings['months'] ?? [])),
                 'amount' => WC()->cart->get_total('edit') * 100,
