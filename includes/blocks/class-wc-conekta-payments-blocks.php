@@ -74,13 +74,17 @@ final class WC_Gateway_Conekta_Blocks_Support extends AbstractPaymentMethodType 
      */
     public function get_payment_method_data(): array
     {
+		$accounts = mg_get_bank_accounts( 'conekta' );
+		$account  = mg_get_bank_account_from_current_user( $accounts );
+
+
         return [
             'is_enabled'                     => filter_var($this->get_setting( 'enabled' ),FILTER_VALIDATE_BOOLEAN),
             'title'       		             => $this->get_setting( 'title' ),
             'description' 		             => $this->get_setting( 'description' ),
             'supports'    			         => array_filter( $this->gateway->supports, [ $this->gateway, 'supports' ] ),
             'name'                           => $this->name,
-			'api_key' 						 => $this->get_setting('cards_public_api_key') ?: $this->get_setting('cards_api_key'),
+			'api_key' 						 => $account['cards_public_api_key'] ?? null ?: $account['cards_api_key'] ?? null,
             'locale' 						 => $this->gateway->get_user_locale(),
 			'msi_enabled'					 => $this->get_setting('is_msi_enabled') === 'yes',
 			'available_msi_options' 		 => array_map('intval', (array)$this->get_setting('months')),
