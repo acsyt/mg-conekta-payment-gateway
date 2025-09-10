@@ -311,9 +311,9 @@ class WC_Conekta_Bank_Transfer_Gateway extends WC_Conekta_Plugin
         }
         try {
             $orderCreated = $this->get_api_instance($this->settings['api_key'], $this->version)->createOrder($rq);
-            $order->update_status('on-hold', __('Awaiting the conekta bank transfer payment', 'woocommerce'));
             self::update_conekta_order_meta( $order, $orderCreated->getId(), 'conekta-order-id');
             self::update_conekta_order_meta( $order, $orderCreated->getCharges()->getData()[0]->getPaymentMethod()->getClabe(), 'conekta-clabe');
+            $order->update_status('on-hold', __('Awaiting the conekta bank transfer payment', 'woocommerce')); // moved here after saving metadata in order to allow email template to have access to these properties
 
             update_post_meta( $order->get_id(), 'additional_branch_track', mg_format_additional_branch_track( $this->account, $order->get_id(), $orderCreated->getId() ) );
             $order->add_order_note( 'Realizando pago para: ' . $this->account['name'] );
