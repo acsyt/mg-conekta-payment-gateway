@@ -76,15 +76,21 @@ function ckpg_build_line_items($items, $version)
         $item_name   = item_name_validation($item['name']);
         $unit_price  = intval(round(floatval($unit_price) / 10), 2);
         $quantity    = intval($item['qty']);
-
+        $tags = wp_get_post_terms($item['product_id'], 'product_tag', array('fields' => 'names'));
+        $brands = wp_get_post_terms($item['product_id'], 'product_brand', array('fields' => 'names'));
 
         $line_item_params = array(
             'name'        => $item_name,
             'unit_price'  => $unit_price,
             'quantity'    => $quantity,
-            'tags'        => ['WooCommerce', "Conekta ".$version],
-            'metadata'    => array('soft_validations' => true)
+            'tags'        => array_merge(['WooCommerce', "Conekta ".$version], $tags),
+            'metadata'    => array(
+                                    'soft_validations' => true,
+                                    'images' =>  $productmeta->get_gallery_image_ids(),
+                                  ),
+           'description' => $productmeta->get_description() ?: 'no description',
         );
+
 
         if (!empty($sku)) {
             $line_item_params = array_merge(
@@ -187,6 +193,40 @@ function ckpg_build_customer_info($data)
     $customer_info = array_merge($data['customer_info'], array('metadata' => array('soft_validations' => true)));
 
     return $customer_info;
+}
+
+function ckpg_build_get_fees($fees): array
+{
+    $negative_fees = array();
+    $positive_fees = array();
+
+    foreach ($fees as $fee) {
+        $price      = $fee->get_total();
+        $fee_amount = floatval($price) * 1000;
+        $fee_name   = (string)$fee->get_name();
+        $fee_name   = esc_html($fee_name);
+        $fee_amount_formatted = intval(round(floatval($fee_amount) / 10), 2);
+
+        if ($price >= 0) {
+            $positive_fees[] = array(
+                'description' => $fee_name,
+                'amount'      => $fee_amount_formatted
+            );
+        } else {
+            $negative_fees[] = array(
+                'code'   => $fee_name,
+                'amount' => $fee_amount_formatted * -1,
+                'type'   => 'coupon'
+            );
+        }
+    } 
+
+    $data = array(
+        'discounts' => $negative_fees,
+        'fees' => $positive_fees,
+    );
+
+    return $data;
 }
 
 /**

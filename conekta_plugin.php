@@ -11,12 +11,16 @@ use \Conekta\Configuration;
 use \Conekta\Model\WebhookRequest;
 use Conekta\Api\OrdersApi;
 use Conekta\ApiException;
+use GuzzleHttp\HandlerStack;
+use GuzzleHttp\Middleware;
+use GuzzleHttp\Psr7\Request;
+use GuzzleHttp\Client;
 
 class WC_Conekta_Plugin extends WC_Payment_Gateway
 {
-	public $version  = "5.0.8";
+	public $version  = "5.2.5";
 	public $name = "WooCommerce 2";
-	public $description = "Payment Gateway through Conekta.io for Woocommerce for both credit and debit cards as well as cash payments  and monthly installments for Mexican credit cards.";
+	public $description = "Payment Gateway via Conekta.io for WooCommerce: accepts credit, debit, cash, and monthly installments for Mexican credit cards.";
 	public $plugin_name = "Conekta Payment Gateway for Woocommerce";
 	public $plugin_URI = "https://wordpress.org/plugins/conekta-payment-gateway/";
 	public $author = "Conekta.io";
@@ -164,6 +168,64 @@ class WC_Conekta_Plugin extends WC_Payment_Gateway
         $order->save();
     }
 
+    public static function get_user_locale() {
+        $current_user_id = get_current_user_id();
+
+        if ($current_user_id) {
+            $user_locale = get_user_meta($current_user_id, 'locale', true);
+    
+            if (!empty($user_locale)) {
+                return in_array(substr($user_locale, 0, 2), ['es', 'en']) ? substr($user_locale, 0, 2) : 'es';
+            }
+        }
+    
+        $site_locale = substr(get_locale(), 0, 2);
+    
+        return in_array($site_locale, ['es', 'en']) ? $site_locale : 'es';
+    }
+    public static function get_user_ip(): string {
+        $ip_keys = [
+            'HTTP_X_FORWARDED_FOR',   // Load Balancer / Proxies
+            'HTTP_CF_CONNECTING_IP',  // Cloudflare
+            'HTTP_X_REAL_IP',         // Nginx
+            'HTTP_CLIENT_IP',         // Proxy
+            'REMOTE_ADDR'             // Last option
+        ];
+    
+        foreach ($ip_keys as $key) {
+            if (!empty($_SERVER[$key])) {
+                $ip_list = explode(',', $_SERVER[$key]);
+                $ip_list = array_map('trim', $ip_list);
+
+                foreach (array_reverse($ip_list) as $ip) {
+                    if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+                        return $ip;
+                    }
+                }
+            }
+        }
+    
+        return '0.0.0.0';
+    }
+
+    public static function get_api_instance(string  $api_key, string $version): OrdersApi
+    {
+        $stack = HandlerStack::create();
+        $stack->push(Middleware::mapRequest(function (Request $request) use ($version) {
+            return $request->withHeader(
+                'X-Conekta-Client-User-Agent',
+                json_encode([
+                    'plugin_name' => 'woocommerce',
+                    'plugin_version' => $version,
+                ])
+            );
+        }));
+        $client = new Client([
+            'handler' => $stack,
+        ]);
+        return  new OrdersApi($client, Configuration::getDefaultConfiguration()->setAccessToken($api_key));
+    }
+
     public static function set_bank_account_from_webhook_event( $event, $gateway )
     {
         $conekta_order = $event['data']['object'];
@@ -173,5 +235,4 @@ class WC_Conekta_Plugin extends WC_Payment_Gateway
             mg_gateways_set_current_bank_account( $order, $gateway );
         }
     }
-    
 }
