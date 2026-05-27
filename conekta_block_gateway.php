@@ -333,7 +333,7 @@ class WC_Conekta_Gateway extends WC_Conekta_Plugin
             $rq->setCharges([$charge]);
         
             $orderCreated = $this->get_api_instance($this->settings['cards_api_key'], $this->version)->createOrder($rq, $this->get_user_locale());
-            $order->update_status('pending', __('Esperando el pago con Conekta', 'woocommerce'));
+            $order->update_status('on-hold', __('Esperando confirmación del pago con Conekta', 'woocommerce'));
             self::update_conekta_order_meta($order, $orderCreated->getId(), 'conekta-order-id');
 
             update_post_meta( $order->get_id(), 'additional_branch_track', mg_format_additional_branch_track( $this->account, $order->get_id(), $orderCreated->getId() ) );
