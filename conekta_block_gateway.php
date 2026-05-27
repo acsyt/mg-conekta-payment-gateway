@@ -337,6 +337,24 @@ class WC_Conekta_Gateway extends WC_Conekta_Plugin
             self::update_conekta_order_meta($order, $orderCreated->getId(), 'conekta-order-id');
 
             update_post_meta( $order->get_id(), 'additional_branch_track', mg_format_additional_branch_track( $this->account, $order->get_id(), $orderCreated->getId() ) );
+
+            $order_array = json_decode( wp_json_encode( $orderCreated->jsonSerialize() ), true );
+            // Store last 4 digits of card in order meta for reference
+            $last4 = $order_array['charges']['data'][0]['payment_method']['last4'] ?? null;
+            if ($last4) {
+                update_post_meta( $order->get_id(), 'card_last4', $last4 );
+            }
+            // Store card brand
+            $brand = $order_array['charges']['data'][0]['payment_method']['brand'] ?? null;
+            if ($brand) {
+                update_post_meta( $order->get_id(), 'card_brand', $brand );
+            }
+            // Store card type (debit/credit)
+            $card_type = $order_array['charges']['data'][0]['payment_method']['type'] ?? null;
+            if ($card_type) {
+                update_post_meta( $order->get_id(), 'card_type', $card_type );
+            }
+
             $order->add_order_note( 'Realizando pago para: ' . $this->account['name'] );
             mg_gateways_send_mail_notification( $order, true );
         
